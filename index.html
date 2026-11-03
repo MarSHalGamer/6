@@ -1,64 +1,343 @@
 <!DOCTYPE html>
-<html lang="ar">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لعبة شطرنج</title>
+    <title>شطرنج مباشر ضد الذكاء الاصطناعي</title>
+    <!-- مكتبة Chess.js للتعامل مع قوانين الشطرنج -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <style>
         body {
-            font-family: Arial, sans-serif;
-        }
-        #board {
-            width: 400px;
-            height: 400px;
-            display: grid;
-            grid-template-columns: repeat(8, 50px);
-            border: 2px solid #333;
-        }
-        .square {
-            width: 50px;
-            height: 50px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e2f;
+            color: #ffffff;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 2em;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
         }
-        .white { background: #eee; }
-        .black { background: #333; color: white; }
+
+        h1 {
+            margin-bottom: 10px;
+            font-size: 2rem;
+            color: #f0d9b5;
+        }
+
+        #status {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            height: 30px;
+            color: #a0a0b0;
+            font-weight: bold;
+        }
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            width: min(90vw, 500px);
+            aspect-ratio: 1 / 1;
+            border: 5px solid #4a4a6a;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+
+        .square {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: min(10vw, 50px);
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            transition: background-color 0.2s;
+        }
+
+        .light { background-color: #f0d9b5; }
+        .dark { background-color: #b58863; }
+        
+        .selected { background-color: #f6f669 !important; }
+        .legal-move::after {
+            content: '';
+            position: absolute;
+            width: 30%;
+            height: 30%;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+        }
+        .legal-capture {
+            background: radial-gradient(transparent 60%, rgba(0, 0, 0, 0.2) 60%, rgba(0, 0, 0, 0.2) 70%, transparent 70%) !important;
+        }
+        .last-move { background-color: rgba(155, 199, 0, 0.41) !important; }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            background-color: #4a4a6a;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover { background-color: #6a6a8a; }
+
+        /* تأثير التفكير للذكاء الاصطناعي */
+        .thinking::after {
+            content: '...';
+            animation: dots 1.5s steps(3, end) infinite;
+        }
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
     </style>
 </head>
 <body>
-    <h1>لعبة شطرنج مع الذكاء الاصطناعي</h1>
-    <div id="board"></div>
-    
-    <script>
-        const board = document.getElementById("board");
-        const pieces = {
-            'P': '♟', 'R': '♜', 'N': '♞', 'B': '♝', 'Q': '♛', 'K': '♚',
-            'p': '♙', 'r': '♖', 'n': '♘', 'b': '♗', 'q': '♕', 'k': '♔'
-        };
-        const initialPosition = [
-            'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r',
-            'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p',
-            '', '', '', '', '', '', '', '',
-            '', '', '', '', '', '', '', '',
-            '', '', '', '', '', '', '', '',
-            '', '', '', '', '', '', '', '',
-            'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P',
-            'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'
-        ];
 
-        function createBoard() {
-            board.innerHTML = '';
-            initialPosition.forEach((piece, index) => {
-                const square = document.createElement("div");
-                square.classList.add("square", (Math.floor(index / 8) + index) % 2 === 0 ? "white" : "black");
-                square.innerHTML = piece ? pieces[piece] : '';
-                board.appendChild(square);
-            });
+    <h1>♚ شطرنج مباشر ♔</h1>
+    <div id="status">دورك (الأبيض)</div>
+    <div id="board"></div>
+    <div class="controls">
+        <button id="resetBtn">🔄 لعبة جديدة</button>
+    </div>
+
+    <script>
+        let game = new Chess();
+        let selectedSquare = null;
+        let legalMovesForSelected = [];
+        let isAiThinking = false;
+        let lastMove = null;
+
+        const boardEl = document.getElementById('board');
+        const statusEl = document.getElementById('status');
+        const resetBtn = document.getElementById('resetBtn');
+
+        const pieceUnicode = {
+            'wK': '♔', 'wQ': '♕', 'wR': '♖', 'wB': '♗', 'wN': '♘', 'wP': '♙',
+            'bK': '♚', 'bQ': '♛', 'bR': '♜', 'bB': '♝', 'bN': '♞', 'bP': '♟'
+        };
+
+        function renderBoard() {
+            boardEl.innerHTML = '';
+            const board = game.board();
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    const isLight = (row + col) % 2 === 0;
+                    square.className = `square ${isLight ? 'light' : 'dark'}`;
+                    
+                    const squareName = String.fromCharCode(97 + col) + (8 - row);
+                    square.dataset.square = squareName;
+
+                    // تمييز آخر حركة
+                    if (lastMove && (lastMove.from === squareName || lastMove.to === squareName)) {
+                        square.classList.add('last-move');
+                    }
+
+                    // تمييز المربع المحدد
+                    if (selectedSquare === squareName) {
+                        square.classList.add('selected');
+                    }
+
+                    // تمييز الحركات القانونية
+                    if (legalMovesForSelected.some(m => m.to === squareName)) {
+                        const piece = game.get(squareName);
+                        square.classList.add(piece ? 'legal-capture' : 'legal-move');
+                    }
+
+                    const piece = board[row][col];
+                    if (piece) {
+                        square.textContent = pieceUnicode[piece.color + piece.type.toUpperCase()];
+                    }
+
+                    square.addEventListener('click', handleSquareClick);
+                    boardEl.appendChild(square);
+                }
+            }
         }
 
-        createBoard();
+        function handleSquareClick(e) {
+            if (isAiThinking || game.game_over() || game.turn() !== 'w') return;
+
+            const clickedSquare = e.currentTarget.dataset.square;
+            const piece = game.get(clickedSquare);
+
+            if (selectedSquare) {
+                // محاولة تنفيذ الحركة
+                const move = legalMovesForSelected.find(m => m.to === clickedSquare);
+                if (move) {
+                    makeMove(move.from, move.to);
+                } else if (piece && piece.color === 'w') {
+                    // تغيير تحديد القطعة
+                    selectSquare(clickedSquare);
+                } else {
+                    // إلغاء التحديد
+                    clearSelection();
+                }
+            } else {
+                // تحديد قطعة جديدة
+                if (piece && piece.color === 'w') {
+                    selectSquare(clickedSquare);
+                }
+            }
+        }
+
+        function selectSquare(square) {
+            selectedSquare = square;
+            legalMovesForSelected = game.moves({ square: square, verbose: true });
+            renderBoard();
+        }
+
+        function clearSelection() {
+            selectedSquare = null;
+            legalMovesForSelected = [];
+            renderBoard();
+        }
+
+        function makeMove(from, to) {
+            const move = game.move({ from: from, to: to, promotion: 'q' }); // ترقية البيدق لوزير تلقائياً
+            lastMove = move;
+            clearSelection();
+            updateStatus();
+
+            if (!game.game_over()) {
+                setTimeout(aiMove, 300); // تأخير بسيط لإعطاء الانطباع بالتفكير
+            }
+        }
+
+        function updateStatus() {
+            if (game.in_checkmate()) {
+                statusEl.textContent = game.turn() === 'w' ? '🏆 كش ملك! الذكاء الاصطناعي يفوز' : '🎉 مبروك! لقد فزت';
+                statusEl.style.color = '#ff6b6b';
+            } else if (game.in_draw()) {
+                statusEl.textContent = '🤝 تعادل!';
+                statusEl.style.color = '#feca57';
+            } else if (game.in_check()) {
+                statusEl.textContent = game.turn() === 'w' ? '⚠️ كش! دورك' : '⚠️ كش! الذكاء يفكر';
+                statusEl.style.color = '#ff9f43';
+            } else {
+                statusEl.textContent = game.turn() === 'w' ? 'دورك (الأبيض)' : 'الذكاء الاصطناعي يفكر';
+                statusEl.style.color = '#a0a0b0';
+            }
+            
+            if (game.turn() === 'b' && !game.game_over()) {
+                statusEl.classList.add('thinking');
+            } else {
+                statusEl.classList.remove('thinking');
+            }
+        }
+
+        // --- خوارزمية الذكاء الاصطناعي (Minimax) ---
+        function evaluateBoard() {
+            if (game.in_checkmate()) return game.turn() === 'w' ? -10000 : 10000;
+            if (game.in_draw()) return 0;
+
+            const pieceValues = { p: 10, n: 30, b: 30, r: 50, q: 90, k: 0 };
+            let score = 0;
+            const board = game.board();
+            
+            for (let row of board) {
+                for (let square of row) {
+                    if (square) {
+                        const value = pieceValues[square.type];
+                        score += square.color === 'w' ? value : -value;
+                    }
+                }
+            }
+            return score;
+        }
+
+        function minimax(depth, alpha, beta, isMaximizing) {
+            if (depth === 0 || game.game_over()) return evaluateBoard();
+
+            const moves = game.moves({ verbose: true });
+            
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                for (let move of moves) {
+                    game.move(move);
+                    const eval = minimax(depth - 1, alpha, beta, false);
+                    game.undo();
+                    maxEval = Math.max(maxEval, eval);
+                    alpha = Math.max(alpha, eval);
+                    if (beta <= alpha) break;
+                }
+                return maxEval;
+            } else {
+                let minEval = Infinity;
+                for (let move of moves) {
+                    game.move(move);
+                    const eval = minimax(depth - 1, alpha, beta, true);
+                    game.undo();
+                    minEval = Math.min(minEval, eval);
+                    beta = Math.min(beta, eval);
+                    if (beta <= alpha) break;
+                }
+                return minEval;
+            }
+        }
+
+        function aiMove() {
+            isAiThinking = true;
+            updateStatus();
+
+            // نستخدم setTimeout لضمان تحديث الواجهة قبل بدء الحساب
+            setTimeout(() => {
+                const moves = game.moves({ verbose: true });
+                let bestMove = null;
+                let bestValue = Infinity; // الذكاء يلعب بالأسود، لذا يهدف لتقليل التقييم
+
+                // العمق 3 يوفر توازن جيد بين القوة والسرعة
+                for (let move of moves) {
+                    game.move(move);
+                    const boardValue = minimax(3, -Infinity, Infinity, true);
+                    game.undo();
+
+                    if (boardValue < bestValue) {
+                        bestValue = boardValue;
+                        bestMove = move;
+                    }
+                }
+
+                if (bestMove) {
+                    game.move(bestMove);
+                    lastMove = bestMove;
+                }
+                
+                isAiThinking = false;
+                renderBoard();
+                updateStatus();
+            }, 100);
+        }
+
+        // --- أحداث الأزرار ---
+        resetBtn.addEventListener('click', () => {
+            game = new Chess();
+            selectedSquare = null;
+            legalMovesForSelected = [];
+            lastMove = null;
+            isAiThinking = false;
+            renderBoard();
+            updateStatus();
+        });
+
+        // تشغيل اللعبة لأول مرة
+        renderBoard();
+        updateStatus();
     </script>
 </body>
 </html>
